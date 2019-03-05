@@ -1,7 +1,7 @@
 import { LiveArea, LiveAreaInterface, StaticArea } from './Area';
 import { Renderer, Writer } from './Renderer';
 import util from 'util';
-import termSize from 'term-size';
+import { Terminal } from './Terminal';
 
 export interface LiveContainerInterface {
     renderer : MultiAreaRenderer;
@@ -87,14 +87,12 @@ export class MultiAreaRenderer extends Renderer {
     constructor ( width : number = null, height : number = null ) {
         super();
 
-        const dimensions = termSize();
-        
         if ( typeof width !== 'number' ) {
-            this.width = dimensions.columns;
+            this.width = Terminal.width;
         }
 
         if ( typeof height !== 'number' ) {
-            this.height = dimensions.rows;
+            this.height = Terminal.height;
         }
     }
 

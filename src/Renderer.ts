@@ -1,7 +1,7 @@
 import { LiveAreaInterface } from './Area';
 import stripAnsi from 'strip-ansi';
 import ansiEscapes from 'ansi-escapes';
-import termSize from 'term-size';
+import { Terminal } from './Terminal';
 
 export interface Writer {
     write ( text : string ) : void;
@@ -75,10 +75,8 @@ export class SingletonRenderer extends Renderer {
     constructor ( width : number = null ) {
         super();
 
-        const dimensions = termSize();
-        
         if ( typeof width !== 'number' ) {
-            this.width = dimensions.columns;
+            this.width = Terminal.width;
         }
     }
 
