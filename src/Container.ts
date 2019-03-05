@@ -17,6 +17,8 @@ export interface LiveContainerInterface {
 }
 
 export class LiveContainer implements LiveContainerInterface {
+    public static global : LiveContainer = new LiveContainer();
+
     protected method : any = null;
 
     renderer: MultiAreaRenderer = new MultiAreaRenderer;

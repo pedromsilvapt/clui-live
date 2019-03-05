@@ -1,4 +1,5 @@
 import { RendererInterface, SingletonRenderer } from './Renderer';
+import { LiveContainer } from './Container';
 
 export interface LiveAreaInterface {
     renderer : RendererInterface;
@@ -6,6 +7,8 @@ export interface LiveAreaInterface {
     readonly text : string;
 
     readonly closed : boolean;
+
+    hook () : this;
 
     clear () : this;
 
@@ -41,6 +44,12 @@ export class LiveArea implements LiveAreaInterface {
 
     get text () : string {
         return this._text;
+    }
+
+    hook () : this {
+        LiveContainer.global.hook().addLiveArea( this )
+
+        return this;
     }
 
     clear () : this {
@@ -108,6 +117,12 @@ export class StaticArea implements LiveAreaInterface {
         this.closed = true;
     }
     
+    hook () : this {
+        LiveContainer.global.hook().addLiveArea( this );
+        
+        return this;
+    }
+
     clear () : this {
         return this.write( null );
     }
