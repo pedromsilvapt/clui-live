@@ -3,74 +3,6 @@ import { Renderer, Writer } from './Renderer';
 import util from 'util';
 import { Terminal } from './Terminal';
 
-export interface LiveContainerInterface {
-    renderer : MultiAreaRenderer;
-
-    // Hook this container to the console.log method
-    hook () : this;
-
-    unhook () : this;
-
-    addLiveArea ( area : LiveArea ) : void;
-
-    createLiveArea () : LiveArea;
-}
-
-export class LiveContainer implements LiveContainerInterface {
-    public static global : LiveContainer = new LiveContainer();
-
-    protected method : any = null;
-
-    renderer: MultiAreaRenderer = new MultiAreaRenderer;
-
-    hook () : this {
-        if ( this.method == null ) {
-            this.method = console.log;
-
-            console.log = ( ...args : any[] ) => {
-                this.addLiveArea( new StaticArea( ( util as any ).formatWithOptions( { colors: true }, ...args ) ) );
-            };
-        }
-
-        return this;
-    }
-    
-    unhook () : this {
-        if ( this.method != null ) {
-            console.log = this.method;
-            
-            this.method = null;
-        }
-
-        return this;
-    }
-
-    addLiveArea ( area : LiveAreaInterface ) : void {
-        area.renderer = this.renderer;
-    }
-
-    createLiveArea () : LiveArea {
-        const area = new LiveArea();
-
-        this.addLiveArea( area );
-        
-        return area;
-    }
-
-    createStaticArea ( text : string ) : StaticArea {
-        const area = new StaticArea( text );
-
-        this.addLiveArea( area );
-        
-        return area;
-    }
-}
-
-export interface Range {
-    start : number;
-    length : number;
-}
-
 export class MultiAreaRenderer extends Renderer {
     areas : LiveAreaInterface[] = [];
 
@@ -234,4 +166,72 @@ export class MultiAreaRenderer extends Renderer {
     close ( area : LiveAreaInterface ) : void {
         this.flushTopAreas();
     }
+}
+
+export interface LiveContainerInterface {
+    renderer : MultiAreaRenderer;
+
+    // Hook this container to the console.log method
+    hook () : this;
+
+    unhook () : this;
+
+    addLiveArea ( area : LiveArea ) : void;
+
+    createLiveArea () : LiveArea;
+}
+
+export class LiveContainer implements LiveContainerInterface {
+    public static global : LiveContainer = new LiveContainer();
+
+    protected method : any = null;
+
+    renderer: MultiAreaRenderer = new MultiAreaRenderer;
+
+    hook () : this {
+        if ( this.method == null ) {
+            this.method = console.log;
+
+            console.log = ( ...args : any[] ) => {
+                this.addLiveArea( new StaticArea( ( util as any ).formatWithOptions( { colors: true }, ...args ) ) );
+            };
+        }
+
+        return this;
+    }
+    
+    unhook () : this {
+        if ( this.method != null ) {
+            console.log = this.method;
+            
+            this.method = null;
+        }
+
+        return this;
+    }
+
+    addLiveArea ( area : LiveAreaInterface ) : void {
+        area.renderer = this.renderer;
+    }
+
+    createLiveArea () : LiveArea {
+        const area = new LiveArea();
+
+        this.addLiveArea( area );
+        
+        return area;
+    }
+
+    createStaticArea ( text : string ) : StaticArea {
+        const area = new StaticArea( text );
+
+        this.addLiveArea( area );
+        
+        return area;
+    }
+}
+
+export interface Range {
+    start : number;
+    length : number;
 }
