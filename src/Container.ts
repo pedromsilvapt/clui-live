@@ -168,6 +168,10 @@ export class MultiAreaRenderer extends Renderer {
     }
 }
 
+export interface Class<T, A extends any[]> {
+    new ( ...args : A ) : T;
+}
+
 export interface LiveContainerInterface {
     renderer : MultiAreaRenderer;
 
@@ -176,9 +180,9 @@ export interface LiveContainerInterface {
 
     unhook () : this;
 
-    addLiveArea ( area : LiveArea ) : void;
+    addLiveArea ( area : LiveAreaInterface ) : void;
 
-    createLiveArea () : LiveArea;
+    createLiveArea<T extends LiveAreaInterface, A extends any[] = []> ( factory ?: Class<T, A>, ...args : A ) : T;
 }
 
 export class LiveContainer implements LiveContainerInterface {
@@ -214,8 +218,8 @@ export class LiveContainer implements LiveContainerInterface {
         area.renderer = this.renderer;
     }
 
-    createLiveArea () : LiveArea {
-        const area = new LiveArea();
+    createLiveArea <T extends LiveAreaInterface = LiveArea, A extends any[] = []> ( factory : Class<T, A> = LiveArea as any, ...args : A ) : T {
+        const area = new factory( ...args );
 
         this.addLiveArea( area );
         

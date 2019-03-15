@@ -1,6 +1,6 @@
 {
   "name": "clui-live",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Simply update text on the terminal, even after subsequent output is written",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
