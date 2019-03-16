@@ -28,6 +28,10 @@ export class LiveArea implements LiveAreaInterface {
 
     set renderer ( renderer : RendererInterface ) {
         if ( this._renderer != renderer ) {
+            if ( this._renderer != null ) {
+                this._renderer.remove( this );
+            }
+
             this._renderer = renderer;
             
             if ( renderer != null )  {
@@ -49,7 +53,15 @@ export class LiveArea implements LiveAreaInterface {
     }
 
     hook () : this {
-        LiveContainer.global.hook().addLiveArea( this )
+        const container = LiveContainer.global.hook();
+
+        if ( this.renderer == container.renderer ) {
+            this.renderer.remove( this );
+
+            this.renderer.update( this );
+        } else {
+            container.addLiveArea( this )
+        }
 
         return this;
     }
@@ -100,6 +112,10 @@ export class StaticArea implements LiveAreaInterface {
 
     set renderer ( renderer : RendererInterface ) {
         if ( this._renderer != renderer ) {
+            if ( this._renderer != null ) {
+                this._renderer.remove( this );
+            }
+
             this._renderer = renderer;
             
             if ( renderer != null )  {
