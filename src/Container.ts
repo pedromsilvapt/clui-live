@@ -28,12 +28,24 @@ export class MultiAreaRenderer extends Renderer {
         }
     }
 
+    /**
+     * The this.areas and this.ranges arrays keep tabs on what live areas this renderer has going.
+     * However there might be some static/closed areas in those arrays as well.
+     * Those areas might be there because they still have a live area above them, and since
+     * that live area can change it's contents (and the number of lines it contains), all areas 
+     * below it (whether they are live or not) need to be kept around when it is needed to update the layout.
+     * 
+     * This functions checks if there is anything in this list that can be flushed out (static areas on the top
+     * segments of these arrays without live areas above them) and if so, removes them.
+     */
     protected flushTopAreas () {
         // Can be smaller than 0
         let newStart = this.linesCount - this.height;
 
+        // Keeps track of how many areas stacked on top are to be removed
         let toRemove = 0;
 
+        // Keeps track of the summed length of the areas stacked on top that are to be removed
         let toRemoveLength = 0;
 
         for ( let i = 0; i < this.areas.length; i++ ) {
@@ -42,6 +54,7 @@ export class MultiAreaRenderer extends Renderer {
 
                 toRemoveLength += this.ranges[ i ].length;
             } else {
+                // When we find the first "live" area, we can stop the search
                 break;
             }
         }

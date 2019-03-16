@@ -34,6 +34,7 @@ import { LiveContainer, LiveArea } from 'clui-live';
 
 const container = new LiveContainer();
 
+// How to add an area to a container
 const area1 = new LiveArea();
 
 container.addLiveArea( area );
@@ -62,4 +63,10 @@ But what about when other people use `console.log`? Doesn't that wreck things? Y
 
 ```typescript
 const container = new LiveContainer().hook();
+```
+
+Sometimes you don't want to have to create a container and pass around references to it. In those instances you can use the global container (one that is lazily created when it is first used) by calling the `hook()` method on each live area (instead of calling it on a container) like so:
+```typescript
+const area1 = new LiveArea().hook();
+const area2 = new LiveArea().hook();
 ```

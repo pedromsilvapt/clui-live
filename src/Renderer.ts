@@ -108,3 +108,39 @@ export class SingletonRenderer extends Renderer {
 
     close ( area : LiveAreaInterface ) : void { /* NOP */ }
 }
+
+export class VirtualRenderer extends Renderer {
+    text : string;
+
+    areas : LiveAreaInterface[] = [];
+
+    protected updateText () {
+        if ( this.areas.length == 0 ) {
+            this.text = null;
+        } else {
+            this.text = this.areas.map( area => area.text ).join( '\n' );
+        }
+    }
+
+    remove ( area : LiveAreaInterface ) : void {
+        const index = this.areas.indexOf( area );
+
+        if ( index >= 0 ) {
+            this.areas.splice( index, 1 );
+
+            this.updateText();
+        }
+    }
+    
+    update ( area : LiveAreaInterface ) : void {
+        const index = this.areas.indexOf( area );
+
+        if ( index < 0 ) {
+            this.areas.push( area );
+        }
+        
+        this.updateText();
+    }
+
+    close ( area : LiveAreaInterface ) : void { }
+}

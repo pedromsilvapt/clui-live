@@ -1,4 +1,4 @@
-import { RendererInterface, SingletonRenderer } from './Renderer';
+import { RendererInterface, SingletonRenderer, VirtualRenderer } from './Renderer';
 import { LiveContainer } from './Container';
 
 export interface LiveAreaInterface {
@@ -27,10 +27,12 @@ export class LiveArea implements LiveAreaInterface {
     protected _closed : boolean = false;
 
     set renderer ( renderer : RendererInterface ) {
-        this._renderer = renderer;
-        
-        if ( renderer != null )  {
-            renderer.update( this );
+        if ( this._renderer != renderer ) {
+            this._renderer = renderer;
+            
+            if ( renderer != null )  {
+                renderer.update( this );
+            }
         }
     }
 
@@ -97,10 +99,12 @@ export class StaticArea implements LiveAreaInterface {
     protected _renderer : RendererInterface = new SingletonRenderer();
 
     set renderer ( renderer : RendererInterface ) {
-        this._renderer = renderer;
-        
-        if ( renderer != null )  {
-            renderer.update( this );
+        if ( this._renderer != renderer ) {
+            this._renderer = renderer;
+            
+            if ( renderer != null )  {
+                renderer.update( this );
+            }
         }
     }
 
@@ -138,6 +142,35 @@ export class StaticArea implements LiveAreaInterface {
     close () : this {
         return this;
     }
+}
 
 
+export class PipeVirtualRenderer extends VirtualRenderer {
+    target : LiveAreaInterface;
+    
+    source ?: LiveAreaInterface;
+
+    constructor ( target : LiveAreaInterface, source ?: LiveAreaInterface ) {
+        super();
+
+        this.target = target;
+
+        if ( source ) {
+            source.renderer = this;
+
+            this.source = source;
+        }
+    }
+
+    protected updateText () {
+        super.updateText();
+
+        this.target.write( this.text );
+    }
+
+    close ( area : LiveAreaInterface ) {
+        if ( this.source && area == this.source ) {
+            this.source.close();
+        }
+    }
 }
