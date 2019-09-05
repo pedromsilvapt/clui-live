@@ -3,6 +3,10 @@ import { Renderer, Writer } from './Renderer';
 import util from 'util';
 import { Terminal } from './Terminal';
 
+export interface RendererQueuedArea {
+    area : LiveAreaInterface;
+}
+
 export class MultiAreaRenderer extends Renderer {
     areas : LiveAreaInterface[] = [];
 
@@ -19,6 +23,42 @@ export class MultiAreaRenderer extends Renderer {
     writer : Writer = process.stdout;
 
     pinLiveAreasToBottom : boolean = false;
+
+    queueBurstUpdates : boolean = true;
+
+    /**
+     * How many times to flush the update queue each second (similar to 
+     * frames per second)
+     */
+    queueFlushRate : number = 30;
+
+    /**
+     * Sometimes when calling update in long-running synchronous code
+     * the timer that flushes the queue based on the flush rate
+     * is only able to run when it all ends, so we ever only see the 
+     * first and last update. To counter this, we can set a maximum number of
+     * concurrent updates before a queue flush is forced
+     */
+    queueMaxCount : number = 1000;
+
+    /**
+     * The queue contains a list of areas that were updated. To prevent
+     * the queue from growing too much and affecting performance (might happen
+     * if a lot of different areas are updated in a small span of time) we can
+     * set a maximum queue size. Trying to queue anymore than that flushes the
+     * queue immediately
+     */
+    queueMaxSize : number = 10;
+
+    protected queuedFlushTimeout : any = null;
+
+    protected queued : LiveAreaInterface[] = null;
+
+    protected queueLocked : boolean = false;
+
+    protected queueCount : number = 0;
+
+
 
     constructor ( width : number = null, height : number = null ) {
         super();
@@ -78,6 +118,56 @@ export class MultiAreaRenderer extends Renderer {
         }
     }
 
+    protected flushQueue () : void {
+        if ( this.queuedFlushTimeout != null ) {
+            clearTimeout( this.queuedFlushTimeout );
+
+            this.queuedFlushTimeout = null;
+        }
+
+        if ( this.queued != null ) {
+            this.queueLocked = true;
+
+            for ( let area of this.queued ) {
+                this.update( area );
+            }
+
+            this.queued = null;
+            this.queueCount = 0;
+
+            this.queueLocked = false;
+        }
+    }
+
+    protected queueUpdate ( area : LiveAreaInterface ) : boolean {
+        if ( this.queued == null ) {
+            this.queued = [];
+            this.queuedFlushTimeout = setTimeout( () => {
+                this.queuedFlushTimeout = null;
+
+                this.flushQueue();
+            }, 1000 / this.queueFlushRate );
+        }
+
+        if ( this.queued.length <= this.queueMaxSize && this.queueCount <= this.queueMaxCount ) {
+            this.queueCount++;
+
+            for ( let queuedArea of this.queued ) {
+                if ( queuedArea == area ) {
+                    // Early exit if the qrea is already on the queue
+                    // Will prevent the queued.push beneath from adding duplicates
+                    return true;
+                }
+            }
+
+            this.queued.push( area );
+
+            return true;
+        }
+
+        return false;
+    }
+
     remove ( area : LiveAreaInterface ) : void {
         const index = this.areas.indexOf( area );
 
@@ -101,6 +191,8 @@ export class MultiAreaRenderer extends Renderer {
             this.ranges.splice( index, 1 );
 
             this.linesCount -= range.length;
+
+            if ( range.pinned ) this.pinnedAreasCount--;
 
             this.flushTopAreas();
         }
@@ -135,6 +227,15 @@ export class MultiAreaRenderer extends Renderer {
             return;
         }
 
+        // If we are adding a new area, and we have updates in queue
+        if ( this.queueLocked == false && index < 0 && this.queued != null ) {
+            this.flushQueue();
+
+            // We don't need to change the index because we only debaunce updates
+            // when they don't need a relayout, which means, they don't affect
+            // the indexes
+        }
+
         const text = area.text;
 
         const textHeight = this.countLines( text, this.width );
@@ -154,6 +255,8 @@ export class MultiAreaRenderer extends Renderer {
             if ( firstPinnedIndex >= 0 ) {
                 const moveUp = this.linesCount - this.ranges[ firstPinnedIndex ].start + 1;
 
+                this.ansiHideCursor();
+
                 this.ansiEraseLines( moveUp );
                
                 if ( text ) {
@@ -169,6 +272,7 @@ export class MultiAreaRenderer extends Renderer {
                     }
                 }
 
+                this.ansiShowCursor();
                 
                 const start = firstPinnedIndex > 0
                     ? this.ranges[ firstPinnedIndex - 1 ].start + this.ranges[ firstPinnedIndex - 1 ].length
@@ -196,6 +300,23 @@ export class MultiAreaRenderer extends Renderer {
             this.flushTopAreas();
         } else {
             const range = this.ranges[ index ];
+
+            // QUEUE
+            // Obviously are good boys and we never mess with the queue when 
+            // it is locked. We also do not add to the queue if 
+            if ( this.queueBurstUpdates && this.queueLocked == false && range.pinned == areaIsPinned && textHeight == range.length ) {
+                // If the area was successfully queued, we can early-exit the function
+                // Sometimes the area might not be queued, in which case the function will
+                // return false. This can happen when the update queue is too big, which
+                // will force an early queue flush 
+                if ( this.queueUpdate( area ) ) {
+                    return;
+                }
+            }
+            
+            if ( this.queueLocked == false && this.queued != null ) {
+                this.flushQueue();
+            }
 
             if ( areaIsPinned && !range.pinned ) this.pinnedAreasCount++;
             else if ( !areaIsPinned && range.pinned ) this.pinnedAreasCount--;
@@ -226,6 +347,8 @@ export class MultiAreaRenderer extends Renderer {
                 // If there is no pinned area (other than this) we just append it to the end
                 if ( firstPinnedIndex < 0 ) firstPinnedIndex = this.ranges.length;
 
+                this.ansiHideCursor();
+
                 // Erase everything beneath the area
                 this.ansiEraseLines( this.linesCount - range.start + 1 );
 
@@ -253,6 +376,8 @@ export class MultiAreaRenderer extends Renderer {
                     }
                 }
 
+                this.ansiShowCursor();
+
                 const start = firstPinnedIndex < this.ranges.length
                     ? this.ranges[ firstPinnedIndex ].start - textHeight
                     : this.ranges[ firstPinnedIndex - 1 ].start + this.ranges[ firstPinnedIndex - 1 ].length;
@@ -273,6 +398,8 @@ export class MultiAreaRenderer extends Renderer {
 
                 // ASSUME firstPinnedIndex <= index, If we are no longer pinned, and we need to be pushed up,
                 // then we can assume that there is an area pinned above us.
+
+                this.ansiHideCursor();
 
                 // Erase everything beneath the area
                 this.ansiEraseLines( this.linesCount - firstPinnedRange.start );
@@ -303,6 +430,8 @@ export class MultiAreaRenderer extends Renderer {
                     }
                 }
 
+                this.ansiShowCursor();
+
                 const start = this.ranges[ firstPinnedIndex ].start - textHeight;
                 
                 // Now we need to reinsert the area and range in the correct position, as well as updating it's values
@@ -314,7 +443,9 @@ export class MultiAreaRenderer extends Renderer {
             // Just erase those lines and keep everything else intact
             } else if ( textHeight === range.length && textHeight > 0 ) {
                 const moveUp = this.linesCount - ( range.start + range.length ) + 1;
-                
+
+                this.ansiHideCursor();
+
                 this.ansiMoveUp( moveUp );
 
                 this.ansiEraseLines( range.length );
@@ -324,6 +455,8 @@ export class MultiAreaRenderer extends Renderer {
                 this.ansiMoveToLeft();
 
                 this.ansiMoveDown( moveUp );
+
+                this.ansiShowCursor();
             } else if ( textHeight != range.length ) {
                 // TODO What about when the length is so big that would cause the overall length to overflow??
 
@@ -333,6 +466,8 @@ export class MultiAreaRenderer extends Renderer {
                 range.length = textHeight;
 
                 const moveUp = this.linesCount - range.start + 1;
+
+                this.ansiHideCursor();
 
                 this.ansiEraseLines( moveUp );
 
@@ -347,6 +482,8 @@ export class MultiAreaRenderer extends Renderer {
                         this.writer.write( this.areas[ i ].text + '\n' );
                     }
                 }
+
+                this.ansiShowCursor();
 
                 this.linesCount += diff;
 

@@ -36,6 +36,14 @@ export abstract class Renderer implements RendererInterface {
         process.stdout.write( ansiEscapes.cursorLeft );
     }
 
+    protected ansiHideCursor () {
+        process.stdout.write( ansiEscapes.cursorHide );
+    }
+
+    protected ansiShowCursor () {
+        process.stdout.write( ansiEscapes.cursorShow );
+    }
+
     protected countLines ( text : string, width : number = Infinity ) : number {
         if ( !text ) return 0;
 
