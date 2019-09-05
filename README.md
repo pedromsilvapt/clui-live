@@ -1,6 +1,9 @@
 # clui-live
 > Simply update text on the terminal, even after subsequent output is written
 
+![Running the demo file demo/demo.ts](demo/demo.gif)
+> Demo code available at [demo/demo.ts](demo/demo.ts)
+
 ## Installation
 ```shell
 npm install --save clui-live

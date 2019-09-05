@@ -8,6 +8,12 @@ export interface LiveAreaInterface {
 
     readonly closed : boolean;
 
+    readonly pinned : boolean;
+
+    pin () : this;
+
+    unpin () : this;
+
     hook () : this;
 
     clear () : this;
@@ -25,6 +31,8 @@ export class LiveArea implements LiveAreaInterface {
     protected _text : string;
     
     protected _closed : boolean = false;
+
+    protected _pinned : boolean = false;
 
     set renderer ( renderer : RendererInterface ) {
         if ( this._renderer != renderer ) {
@@ -50,6 +58,30 @@ export class LiveArea implements LiveAreaInterface {
 
     get text () : string {
         return this._text;
+    }
+
+    get pinned () : boolean {
+        return this._pinned;
+    }
+
+    protected setPinned ( value : boolean ) : void {
+        if ( !this.closed && this._pinned != value ) {
+            this._pinned = value;
+
+            this.write( this.text );
+        }
+    }
+
+    pin () : this {
+        this.setPinned( true );
+        
+        return this;
+    }
+    
+    unpin () : this {
+        this.setPinned( false );
+        
+        return this;
     }
 
     hook () : this {
@@ -132,9 +164,19 @@ export class StaticArea implements LiveAreaInterface {
     
     readonly closed : boolean;
 
+    readonly pinned : boolean = false;
+
     constructor ( text : string ) {
         this.text = text;
         this.closed = true;
+    }
+    
+    pin () : this {
+        return this.write( null );
+    }
+    
+    unpin () : this {
+        return this.write( null );
     }
     
     hook () : this {

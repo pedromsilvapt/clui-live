@@ -8,6 +8,8 @@ export class MultiAreaRenderer extends Renderer {
 
     ranges : Range[] = [];
 
+    pinnedAreasCount : number = 0;
+
     linesCount : number = 0;
 
     height : number = Infinity;
@@ -15,6 +17,8 @@ export class MultiAreaRenderer extends Renderer {
     width : number = Infinity;
 
     writer : Writer = process.stdout;
+
+    pinLiveAreasToBottom : boolean = false;
 
     constructor ( width : number = null, height : number = null ) {
         super();
@@ -51,6 +55,8 @@ export class MultiAreaRenderer extends Renderer {
         for ( let i = 0; i < this.areas.length; i++ ) {
             if ( this.ranges[ i ].start < newStart || this.areas[ i ].closed ) {
                 toRemove += 1;
+
+                if ( this.ranges[ i ].pinned ) this.pinnedAreasCount--;
 
                 toRemoveLength += this.ranges[ i ].length;
             } else {
@@ -100,40 +106,213 @@ export class MultiAreaRenderer extends Renderer {
         }
     }
 
+    /**
+     * Updates the screen, replacing the contents previously printed for this area with new ones. If the area is no longer
+     * within the screen buffer, of has never been written to the screen, it is appended to the bottom.
+     * 
+     * Special care is also taken to update any text that might have been written afterwards (any lines below that could be overwritten)
+     * as well as handling the optional (slightly complex but super duper cool) use case of some (or all) live areas beeing 
+     * pinned to the bottom of the screen whenever an update happens.
+     * 
+     * @param area 
+     */
     update ( area : LiveAreaInterface ) : void {
+        // Performance shortcut when printing static text and when there is no live areas registered
+        // We can "skip the formalities" and just print the text to the writer
         if ( area.closed && this.areas.length === 0 ) {
             if ( area.text ) {
-                process.stdout.write( area.text + '\n' );
+                this.writer.write( area.text + '\n' );
             }
 
             return;
         }
 
+        // Search to see if we have written this area to the screen already
         const index = this.areas.indexOf( area );
+
+        // Another special performance shortcut, when printing new empty closed/static areas, just ignore them
+        if ( area.closed && !area.text && index < 0 ) {
+            return;
+        }
 
         const text = area.text;
 
         const textHeight = this.countLines( text, this.width );
 
+        // Whether this area should be pinned to the bottom. For obvious reasons, static (closed) areas
+        // can never be pinned
+        const areaIsPinned = ( area.pinned || this.pinLiveAreasToBottom ) && !area.closed;
+
         // If we are updating a live area we didn't have before
         if ( index < 0 ) {
-            this.areas.push( area );
+            // When this area is and not pinned, but there are pinned areas above. We cannot simply push this new one,
+            // We have to remove the upper "pinned" areas, push this one, and then re-insert the pinned ones on the bottom
+            const firstPinnedIndex = this.pinnedAreasCount > 0 && !areaIsPinned
+                ? this.ranges.findIndex( range => range.pinned )
+                : -1;
 
-            this.ranges.push( { start: this.linesCount, length: textHeight } );
+            if ( firstPinnedIndex >= 0 ) {
+                const moveUp = this.linesCount - this.ranges[ firstPinnedIndex ].start + 1;
+
+                this.ansiEraseLines( moveUp );
+               
+                if ( text ) {
+                    this.writer.write( text + '\n' );
+                }
+
+                // Reprint all the pinned areas and update their start index, pushing it down
+                for ( let i = firstPinnedIndex; i < this.areas.length; i++ ) {
+                    this.ranges[ i ].start += textHeight;
+
+                    if ( this.areas[ i ].text ) {
+                        this.writer.write( this.areas[ i ].text + '\n' );
+                    }
+                }
+
+                
+                const start = firstPinnedIndex > 0
+                    ? this.ranges[ firstPinnedIndex - 1 ].start + this.ranges[ firstPinnedIndex - 1 ].length
+                    : 0;
+
+                this.areas.splice( firstPinnedIndex, 0, area );
+    
+                // Since area is never pinned in this case, pinned can be false
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: false } );
+            } else {
+                this.areas.push( area );
+    
+                this.ranges.push( { start: this.linesCount, length: textHeight, pinned: areaIsPinned } );
+                
+                if ( text ) {
+                    this.writer.write( text + '\n' );
+                }
+            }
+
+            // Since this area is pinned, and it's a new one, we should increase the pinned count
+            if ( areaIsPinned ) this.pinnedAreasCount++;
 
             this.linesCount += textHeight;
-
-            if ( text ) {
-                this.writer.write( text + '\n' );
-            }
 
             this.flushTopAreas();
         } else {
             const range = this.ranges[ index ];
 
+            if ( areaIsPinned && !range.pinned ) this.pinnedAreasCount++;
+            else if ( !areaIsPinned && range.pinned ) this.pinnedAreasCount--;
+
+            // Whether the area is already in the bottom (somewhere along all the other pinned areas)
+            const areaIsBottom = index >= this.areas.length - this.pinnedAreasCount;
+
+            // NOTE: 
+            // both variables above can be true, if the element is on the first position of the pinned area
+            const areaIsNotBottom = index <= this.areas.length - this.pinnedAreasCount;
+
+            // Whether this area needs to be moved to the bottom (true) or can stay where it is (false)
+            // It has to be moved only when it is pinned and not already near the bottom
+            const pushToBottom = !areaIsBottom && areaIsPinned;
+
+            const pushToTop = !areaIsNotBottom && !areaIsPinned && this.pinnedAreasCount > 0;
+
+            // When we need to push this area to the bottom (most likely because it wasn't pinned and became so)
+            // It doesn't matter the height of the text (whether it's the same or not as previously)
+            // So we take care of it right here at the top
+            if ( pushToBottom == true ) {
+                // Since we are going to be moving the area to the bottom, we can remove it from it's current position
+                this.areas.splice( index, 1 );
+                this.ranges.splice( index, 1 );
+
+                let firstPinnedIndex = this.ranges.findIndex( range => range.pinned );
+
+                // If there is no pinned area (other than this) we just append it to the end
+                if ( firstPinnedIndex < 0 ) firstPinnedIndex = this.ranges.length;
+
+                // Erase everything beneath the area
+                this.ansiEraseLines( this.linesCount - range.start + 1 );
+
+                // First we move up all the areas there were inbetween first pinned and our own
+                for ( let i = index; i < firstPinnedIndex; i++ ) {
+                    this.ranges[ i ].start -= range.length;
+
+                    if ( this.areas[ i ].text ) {
+                        this.writer.write( this.areas[ i ].text + '\n' );
+                    }
+                }
+
+                // Now print our new area in the place it is supposed to be
+                if ( text ) {
+                    this.writer.write( text + '\n' );
+                }
+
+                const diff = textHeight - range.length;
+
+                for ( let i = firstPinnedIndex; i < this.areas.length; i++ ) {
+                    this.ranges[ i ].start += diff;
+
+                    if ( this.areas[ i ].text ) {
+                        this.writer.write( this.areas[ i ].text + '\n' );
+                    }
+                }
+
+                const start = firstPinnedIndex < this.ranges.length
+                    ? this.ranges[ firstPinnedIndex ].start - textHeight
+                    : this.ranges[ firstPinnedIndex - 1 ].start + this.ranges[ firstPinnedIndex - 1 ].length;
+                
+                // Now we need to reinsert the area and range in the correct position, as well as updating it's values
+                this.areas.splice( firstPinnedIndex, 0, area );
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true } );
+
+                this.linesCount += diff;
+            } else if ( pushToTop == true ) {
+                // Since we are going to be moving the area to the bottom, we can remove it from it's current position
+                this.areas.splice( index, 1 );
+                this.ranges.splice( index, 1 );
+                
+                let firstPinnedIndex = this.ranges.findIndex( range => range.pinned );
+                
+                let firstPinnedRange = this.ranges[ firstPinnedIndex ];
+
+                // ASSUME firstPinnedIndex <= index, If we are no longer pinned, and we need to be pushed up,
+                // then we can assume that there is an area pinned above us.
+
+                // Erase everything beneath the area
+                this.ansiEraseLines( this.linesCount - firstPinnedRange.start );
+
+                // Print our new area in the place it is supposed to be
+                if ( text ) {
+                    this.writer.write( text + '\n' );
+                }
+
+                // First we move up all the areas there were inbetween first pinned and our own
+                for ( let i = firstPinnedIndex; i <= index; i++ ) {
+                    this.ranges[ i ].start += textHeight;
+
+                    if ( this.areas[ i ].text ) {
+                        this.writer.write( this.areas[ i ].text + '\n' );
+                    }
+                }
+
+                const diff = textHeight - range.length;
+
+                if ( diff != 0 ) {
+                    for ( let i = index; i < this.areas.length; i++ ) {
+                        this.ranges[ i ].start += diff;
+    
+                        if ( this.areas[ i ].text ) {
+                            this.writer.write( this.areas[ i ].text + '\n' );
+                        }
+                    }
+                }
+
+                const start = this.ranges[ firstPinnedIndex ].start - textHeight;
+                
+                // Now we need to reinsert the area and range in the correct position, as well as updating it's values
+                this.areas.splice( firstPinnedIndex, 0, area );
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true } );
+
+                this.linesCount += diff;
             // If the old message is the same height as the new one, great
             // Just erase those lines and keep everything else intact
-            if ( textHeight === range.length && textHeight > 0 ) {
+            } else if ( textHeight === range.length && textHeight > 0 ) {
                 const moveUp = this.linesCount - ( range.start + range.length ) + 1;
                 
                 this.ansiMoveUp( moveUp );
@@ -172,6 +351,8 @@ export class MultiAreaRenderer extends Renderer {
                 this.linesCount += diff;
 
                 this.flushTopAreas();
+            } else {
+                range.pinned = areaIsPinned;
             }
         }
     }
@@ -210,7 +391,7 @@ export class LiveContainer implements LiveContainerInterface {
             this.method = console.log;
 
             console.log = ( ...args : any[] ) => {
-                this.addLiveArea( new StaticArea( ( util as any ).formatWithOptions( { colors: true }, ...args ) ) );
+                this.createStaticArea( ( util as any ).formatWithOptions( { colors: true }, ...args ) );
             };
         }
 
@@ -251,4 +432,5 @@ export class LiveContainer implements LiveContainerInterface {
 export interface Range {
     start : number;
     length : number;
+    pinned : boolean;
 }

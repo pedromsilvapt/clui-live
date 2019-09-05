@@ -57,3 +57,4 @@ typings/
 .env
 
 .vscode/*
+demo/
