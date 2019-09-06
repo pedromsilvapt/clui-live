@@ -52,6 +52,8 @@ export class MultiAreaRenderer extends Renderer {
 
     protected queuedFlushTimeout : any = null;
 
+    protected queuedOnlyPinned : boolean = true;
+
     protected queued : LiveAreaInterface[] = null;
 
     protected queueLocked : boolean = false;
@@ -134,6 +136,7 @@ export class MultiAreaRenderer extends Renderer {
 
             this.queued = null;
             this.queueCount = 0;
+            this.queuedOnlyPinned = true;
 
             this.queueLocked = false;
         }
@@ -160,6 +163,10 @@ export class MultiAreaRenderer extends Renderer {
                 }
             }
 
+            // If so far we only have queued for updates pinned areas, then whether we continue to have
+            // only pinned areas queued depends on whether this area in particular is pinned as well
+            if ( this.queuedOnlyPinned ) this.queuedOnlyPinned = area.pinned;
+
             this.queued.push( area );
 
             return true;
@@ -169,6 +176,12 @@ export class MultiAreaRenderer extends Renderer {
     }
 
     remove ( area : LiveAreaInterface ) : void {
+        // When removing something always make sure to flush the queue to prevent the console history from
+        // not having the most recent data
+        if ( this.queueLocked == false && this.queued != null ) {
+            this.flushQueue();
+        }
+
         const index = this.areas.indexOf( area );
 
         if ( index >= 0 ) {
@@ -228,7 +241,7 @@ export class MultiAreaRenderer extends Renderer {
         }
 
         // If we are adding a new area, and we have updates in queue
-        if ( this.queueLocked == false && index < 0 && this.queued != null ) {
+        if ( this.queueLocked == false && index < 0 && this.queued != null && ( this.queuedOnlyPinned == false || area.pinned == true ) ) {
             this.flushQueue();
 
             // We don't need to change the index because we only debaunce updates
@@ -301,10 +314,13 @@ export class MultiAreaRenderer extends Renderer {
         } else {
             const range = this.ranges[ index ];
 
+            const canBeQueued = this.queueBurstUpdates && this.queueLocked == false 
+                             && range.pinned == areaIsPinned && textHeight == range.length && area.closed == false;
+
             // QUEUE
             // Obviously are good boys and we never mess with the queue when 
             // it is locked. We also do not add to the queue if 
-            if ( this.queueBurstUpdates && this.queueLocked == false && range.pinned == areaIsPinned && textHeight == range.length ) {
+            if ( canBeQueued ) {
                 // If the area was successfully queued, we can early-exit the function
                 // Sometimes the area might not be queued, in which case the function will
                 // return false. This can happen when the update queue is too big, which
@@ -314,7 +330,13 @@ export class MultiAreaRenderer extends Renderer {
                 }
             }
             
-            if ( this.queueLocked == false && this.queued != null ) {
+            const queueNeedsFlush = 
+                // Obviously an empty queue (or a locked one) doesn't need to be flushed
+                this.queueLocked == false && this.queued != null &&
+                // And neither does a queue with only pinned areas when updating a non-pinned one
+                ( this.queuedOnlyPinned == false || areaIsPinned == true );
+
+            if ( queueNeedsFlush ) {
                 this.flushQueue();
             }
 
