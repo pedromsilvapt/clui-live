@@ -2,6 +2,7 @@ import { LiveArea, LiveAreaInterface, StaticArea } from './Area';
 import { Renderer, Writer } from './Renderer';
 import util from 'util';
 import { Terminal } from './Terminal';
+import { runInThisContext } from 'vm';
 
 export interface RendererQueuedArea {
     area : LiveAreaInterface;
@@ -94,8 +95,10 @@ export class MultiAreaRenderer extends Renderer {
         // Keeps track of the summed length of the areas stacked on top that are to be removed
         let toRemoveLength = 0;
 
+        // let flushQueue : boolean = false;
+
         for ( let i = 0; i < this.areas.length; i++ ) {
-            if ( this.ranges[ i ].start < newStart || this.areas[ i ].closed ) {
+            if ( this.ranges[ i ].start < newStart || ( this.areas[ i ].closed && !this.ranges[ i ].queued ) ) {
                 toRemove += 1;
 
                 if ( this.ranges[ i ].pinned ) this.pinnedAreasCount--;
@@ -106,6 +109,10 @@ export class MultiAreaRenderer extends Renderer {
                 break;
             }
         }
+
+        // if ( flushQueue && this.queueLocked == false && this.queued != null ) {
+        //     this.flushQueue();
+        // }
 
         if ( toRemove > 0 ) {
             this.areas.splice( 0, toRemove );
@@ -224,7 +231,7 @@ export class MultiAreaRenderer extends Renderer {
     update ( area : LiveAreaInterface ) : void {
         // Performance shortcut when printing static text and when there is no live areas registered
         // We can "skip the formalities" and just print the text to the writer
-        if ( area.closed && this.areas.length === 0 ) {
+        if ( area.closed && this.areas.length === 0 && this.queued == null ) {
             if ( area.text ) {
                 this.writer.write( area.text + '\n' );
             }
@@ -294,11 +301,11 @@ export class MultiAreaRenderer extends Renderer {
                 this.areas.splice( firstPinnedIndex, 0, area );
     
                 // Since area is never pinned in this case, pinned can be false
-                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: false } );
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: false, queued: false } );
             } else {
                 this.areas.push( area );
     
-                this.ranges.push( { start: this.linesCount, length: textHeight, pinned: areaIsPinned } );
+                this.ranges.push( { start: this.linesCount, length: textHeight, pinned: areaIsPinned, queued: false } );
                 
                 if ( text ) {
                     this.writer.write( text + '\n' );
@@ -326,6 +333,8 @@ export class MultiAreaRenderer extends Renderer {
                 // return false. This can happen when the update queue is too big, which
                 // will force an early queue flush 
                 if ( this.queueUpdate( area ) ) {
+                    range.queued = true;
+
                     return;
                 }
             }
@@ -339,6 +348,8 @@ export class MultiAreaRenderer extends Renderer {
             if ( queueNeedsFlush ) {
                 this.flushQueue();
             }
+
+            range.queued = false;
 
             if ( areaIsPinned && !range.pinned ) this.pinnedAreasCount++;
             else if ( !areaIsPinned && range.pinned ) this.pinnedAreasCount--;
@@ -406,7 +417,7 @@ export class MultiAreaRenderer extends Renderer {
                 
                 // Now we need to reinsert the area and range in the correct position, as well as updating it's values
                 this.areas.splice( firstPinnedIndex, 0, area );
-                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true } );
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true, queued: false } );
 
                 this.linesCount += diff;
             } else if ( pushToTop == true ) {
@@ -458,7 +469,7 @@ export class MultiAreaRenderer extends Renderer {
                 
                 // Now we need to reinsert the area and range in the correct position, as well as updating it's values
                 this.areas.splice( firstPinnedIndex, 0, area );
-                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true } );
+                this.ranges.splice( firstPinnedIndex, 0, { start: start, length: textHeight, pinned: true, queued: false } );
 
                 this.linesCount += diff;
             // If the old message is the same height as the new one, great
@@ -510,9 +521,9 @@ export class MultiAreaRenderer extends Renderer {
                 this.linesCount += diff;
 
                 this.flushTopAreas();
-            } else {
-                range.pinned = areaIsPinned;
             }
+
+            range.pinned = areaIsPinned;
         }
     }
     
@@ -592,4 +603,5 @@ export interface Range {
     start : number;
     length : number;
     pinned : boolean;
+    queued : boolean;
 }
