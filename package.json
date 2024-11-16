@@ -26,7 +26,7 @@
   "dependencies": {
     "ansi-escapes": "^3.1.0",
     "strip-ansi": "^4.0.0",
-    "term-size": "^1.2.0"
+    "term-size": "^3.0.2"
   },
   "devDependencies": {
     "@types/node": "^10.17.13"
